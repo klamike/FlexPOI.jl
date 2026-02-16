@@ -1,6 +1,6 @@
 JuMP._is_one_for_printing(::Num) = false
 JuMP._is_zero_for_printing(::Num) = false
-JuMP._string_round(mode, ::typeof(abs), x::Real) = JuMP._string_round(mode, x)
+JuMP._string_round(mode, ::typeof(abs), x::Num) = JuMP._string_round(mode, x)
 JuMP._sign_string(x::Num) = " + "
 JuMP._complex_convert(::Type{T}, x::Num) where {T<:Real} = x
 JuMP._complex_convert_type(::Num) = Num
@@ -26,6 +26,7 @@ function (f::Parametrizer)(vr::VariableRef)
     return is_param ? f.map[vr] : vr
 end
 
+# [SymbolicsPOI] remove type inference/casts from JuMP.value(::Parametrizer, ex)
 function JuMP.value(f::Parametrizer, ex::GenericAffExpr{T,V}) where {T,V}
     ret = ex.constant
     for (var, coef) in ex.terms
@@ -180,7 +181,7 @@ function float64_eval_multivariate_function(
     return ret
 end
 
-for f in (:+, :-, :*, :^, :/, :atan, :min, :max)
+for f in (:+, :-, :*, :^, :/, :atan, :min, :max)  # TODO: need the rest?
     op = Meta.quot(f)
     @eval begin
         function Base.$(f)(x::GenericNonlinearExpr, y::Num)

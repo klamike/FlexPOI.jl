@@ -73,18 +73,3 @@ function update_func!(syquad::SymbolicQuadExpr)
         inner_term.coef = Symbolics.value(Symbolics.evaluate(coef, syquad.map))
     end
 end
-
-
-
-m = Model()
-@variable m x
-@variable m y
-@variable m p in Parameter(1.0)
-@variable m q in Parameter(2.0)
-
-parametrizer = Parametrizer(m)
-value(parametrizer, x * sin(p+cos(q)) * y) isa GenericQuadExpr{Num, VariableRef}
-value(parametrizer, q*x+p) isa GenericAffExpr{Num, VariableRef}
-
-syaff = SymbolicAffExpr(q*x+p)
-syquad = SymbolicQuadExpr(x * sin(p+cos(q)) * y)

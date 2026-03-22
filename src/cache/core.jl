@@ -83,7 +83,31 @@ function _sync_objective_cache!(
     return
 end
 
-function _objective_for_modify(::Type{T}, ::Type{MOI.ScalarAffineFunction{T}}, current) where {T}
+function _vector_affine_constant(::Type{T}, dimension::Integer) where {T}
+    return MOI.VectorAffineFunction{T}(MOI.VectorAffineTerm{T}[], zeros(T, dimension))
+end
+
+function _vector_quadratic_constant(::Type{T}, dimension::Integer) where {T}
+    return MOI.VectorQuadraticFunction{T}(
+        MOI.VectorAffineTerm{T}[],
+        MOI.VectorQuadraticTerm{T}[],
+        zeros(T, dimension),
+    )
+end
+
+_vector_objective_dimension(change::MOI.VectorConstantChange) = length(change.new_constant)
+
+function _vector_objective_dimension(change::MOI.MultirowChange)
+    isempty(change.new_coefficients) && throw(MOI.ModifyObjectiveNotAllowed(change))
+    return maximum(first, change.new_coefficients)
+end
+
+function _objective_for_modify(
+    ::Type{T},
+    ::Type{MOI.ScalarAffineFunction{T}},
+    current,
+    ::MOI.AbstractFunctionModification,
+) where {T}
     if current === nothing
         return _scalar_constant(T, zero(T))
     elseif current isa MOI.ScalarAffineFunction{T}
@@ -94,7 +118,12 @@ function _objective_for_modify(::Type{T}, ::Type{MOI.ScalarAffineFunction{T}}, c
     return convert(MOI.ScalarAffineFunction{T}, current)
 end
 
-function _objective_for_modify(::Type{T}, ::Type{MOI.ScalarQuadraticFunction{T}}, current) where {T}
+function _objective_for_modify(
+    ::Type{T},
+    ::Type{MOI.ScalarQuadraticFunction{T}},
+    current,
+    ::MOI.AbstractFunctionModification,
+) where {T}
     if current === nothing
         return convert(MOI.ScalarQuadraticFunction{T}, _scalar_constant(T, zero(T)))
     elseif current isa MOI.ScalarQuadraticFunction{T}
@@ -107,6 +136,49 @@ function _objective_for_modify(::Type{T}, ::Type{MOI.ScalarQuadraticFunction{T}}
     return convert(MOI.ScalarQuadraticFunction{T}, current)
 end
 
+function _objective_for_modify(
+    ::Type{T},
+    ::Type{MOI.VectorAffineFunction{T}},
+    current,
+    change::Union{MOI.VectorConstantChange,MOI.MultirowChange},
+) where {T}
+    if current === nothing
+        return _vector_affine_constant(T, _vector_objective_dimension(change))
+    elseif current isa MOI.VectorAffineFunction{T}
+        return current
+    elseif current isa MOI.VectorOfVariables
+        return convert(MOI.VectorAffineFunction{T}, current)
+    end
+    return convert(MOI.VectorAffineFunction{T}, current)
+end
+
+function _objective_for_modify(
+    ::Type{T},
+    ::Type{MOI.VectorQuadraticFunction{T}},
+    current,
+    change::Union{MOI.VectorConstantChange,MOI.MultirowChange},
+) where {T}
+    if current === nothing
+        return _vector_quadratic_constant(T, _vector_objective_dimension(change))
+    elseif current isa MOI.VectorQuadraticFunction{T}
+        return current
+    elseif current isa MOI.VectorOfVariables
+        return convert(MOI.VectorQuadraticFunction{T}, convert(MOI.VectorAffineFunction{T}, current))
+    elseif current isa MOI.VectorAffineFunction{T}
+        return convert(MOI.VectorQuadraticFunction{T}, current)
+    end
+    return convert(MOI.VectorQuadraticFunction{T}, current)
+end
+
+function _objective_for_modify(
+    ::Type{T},
+    ::Type{F},
+    _current,
+    change::MOI.AbstractFunctionModification,
+) where {T,F}
+    throw(MOI.ModifyObjectiveNotAllowed(change))
+end
+
 function _modify_outer_objective!(
     model::Optimizer{T},
     attr::MOI.ObjectiveFunction{F},
@@ -116,8 +188,18 @@ function _modify_outer_objective!(
     current =
         current_type === nothing ? nothing :
         MOI.get(model.outer_model, MOI.ObjectiveFunction{current_type}())
-    base = _objective_for_modify(T, F, current)
-    new_objective = MOIU.modify_function(base, change)
+    base = try
+        _objective_for_modify(T, F, current, change)
+    catch err
+        err isa MethodError && throw(MOI.ModifyObjectiveNotAllowed(change))
+        rethrow()
+    end
+    new_objective = try
+        MOIU.modify_function(base, change)
+    catch err
+        err isa MethodError && throw(MOI.ModifyObjectiveNotAllowed(change))
+        rethrow()
+    end
     MOI.set(model.outer_model, MOI.ObjectiveFunction{typeof(new_objective)}(), new_objective)
     return
 end

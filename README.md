@@ -1,21 +1,55 @@
 # FlexPOI
 
-An experimental package for rewriting and simplifying JuMP expressions by substitution instead of introducing additional fixed variables. Similar to POI, but supports any JuMP expression by only promising a best-effort simplification and slower parameter value updates. An integration with DiffOpt is also available.
+`FlexPOI.jl` rewrites JuMP models by substituting `MOI.Parameter` values directly
+into the model before the problem is copied to the inner optimizer. It is similar in
+spirit to ParametricOptInterface, but it works on general JuMP expressions and aims for
+best-effort simplification instead of preserving a stricter parametric representation.
+
 
 ```julia
+using JuMP
+import FlexPOI
+import HiGHS
 
-using JuMP, FlexPOI
-using HiGHS
-using DiffOpt
+const MOI = JuMP.MOI
 
-model = FlexPOI.diff_model(HiGHS.Optimizer)
+model = direct_model(FlexPOI.Optimizer(HiGHS.Optimizer))
+set_silent(model)
+
 @variable(model, x >= 0)
-@variable(model, θ ∈ MOI.Parameter(1.0))
+@variable(model, p in MOI.Parameter(pi / 4))
 @objective(model, Min, x)
-@constraint(model, sin(θ) * x >= 1.0)
-JuMP.optimize!(model)
+@constraint(model, sin(p) * x >= 1)
 
-DiffOpt.set_forward_parameter(model, θ, 1.0)
-DiffOpt.forward_differentiate!(model)
-DiffOpt.get_forward_variable(model, x)
+optimize!(model)
+set_parameter_value(p, pi / 6)
+optimize!(model)
 ```
+
+DiffOpt integration is also available:
+
+```julia
+using JuMP
+import DiffOpt
+import FlexPOI
+import HiGHS
+
+const MOI = JuMP.MOI
+
+model = FlexPOI.quadratic_diff_model(HiGHS.Optimizer)
+set_silent(model)
+
+@variable(model, p in MOI.Parameter(2.0))
+@variable(model, x)
+@objective(model, Min, x^2 + sin(p) * x)
+
+optimize!(model)
+
+DiffOpt.set_forward_parameter(model, p, 0.1)
+DiffOpt.forward_differentiate!(model)
+MOI.get(model, DiffOpt.ForwardObjectiveSensitivity())
+```
+
+The outer model can be nonlinear in parameters and still use
+`FlexPOI.quadratic_diff_model` when parameter substitution leaves the inner problem
+quadratic.

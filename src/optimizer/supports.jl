@@ -112,6 +112,13 @@ function MOI.supports_add_constrained_variable(
 end
 
 function MOI.supports_add_constrained_variable(
+    ::Optimizer,
+    ::Type{<:MOI.Parameter},
+)
+    return true
+end
+
+function MOI.supports_add_constrained_variable(
     model::Optimizer,
     set_type::Type{Tuple{L,U}},
 ) where {L<:MOI.GreaterThan,U<:MOI.LessThan}

@@ -21,6 +21,18 @@ function MOI.add_constrained_variable(model::Optimizer{T}, set::MOI.Parameter{T}
     return vi, ci
 end
 
+function MOI.add_constraint(
+    model::Optimizer{T},
+    func::MOI.VariableIndex,
+    set::MOI.Parameter{T},
+) where {T}
+    _invalidate_structure!(model)
+    ci = MOI.add_constraint(model.outer_model, func, set)
+    model.parameter_values[func] = set.value
+    model.parameter_constraints[func] = ci
+    return ci
+end
+
 function MOI.add_constrained_variable(
     model::Optimizer,
     set::Tuple{MOI.GreaterThan,MOI.LessThan},
